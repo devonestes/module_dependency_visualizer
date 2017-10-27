@@ -48,6 +48,28 @@ defmodule ModuleDependencyVisualizer do
 
     {_, all_modules} =
       Macro.postwalk(ast, [], fn
+        ast = {:defmodule, _meta, module_ast}, modules ->
+          {ast, modules ++ [deps_for_module(module_ast)]}
+
+        ast, modules ->
+          {ast, modules}
+      end)
+
+    List.flatten(all_modules)
+  end
+
+  defp deps_for_module(ast) do
+    {_, dependencies} =
+      Macro.postwalk(ast, [], fn
+        ast = {:., _meta, function_call_info}, modules ->
+          {ast, modules ++ [module_info_for_function_call(function_call_info)]}
+
+        ast, modules ->
+          {ast, modules}
+      end)
+
+    {_, [dependent | other_modules]} =
+      Macro.postwalk(ast, [], fn
         ast = {:__aliases__, _meta, module_info}, modules ->
           {ast, modules ++ [module_info]}
 
@@ -55,7 +77,137 @@ defmodule ModuleDependencyVisualizer do
           {ast, modules}
       end)
 
-    all_modules
+    {_, alias_info} =
+      Macro.postwalk(ast, [], fn
+        ast = {:alias, _meta, info}, aliases ->
+          {ast, aliases ++ [info]}
+
+        ast, aliases ->
+          {ast, aliases}
+      end)
+
+    total_modules = Enum.uniq(dependencies ++ other_modules)
+
+    total_modules
+    |> reconcile_aliases(alias_info)
+    |> Enum.map(fn module_info ->
+         {format_module(dependent), format_module(module_info)}
+       end)
+  end
+
+  defp module_info_for_function_call([module, _fun_name]) when is_atom(module) do
+    [module]
+  end
+
+  defp module_info_for_function_call([{:__aliases__, _meta, module_info}, _fun_name]) do
+    module_info
+  end
+
+  defp reconcile_aliases(mods, []), do: mods
+
+  defp reconcile_aliases(mods, aliases) do
+    mods
+    |> remove_bare_aliases(aliases)
+    |> remove_as_aliases(aliases)
+    |> remove_multi_aliases(aliases)
+  end
+
+  defp remove_bare_aliases(mods, aliases) do
+    bare_aliases =
+      aliases
+      |> Enum.filter(fn
+           [{:__aliases__, _meta, _alias_info}] -> true
+           _ -> false
+         end)
+      |> Enum.map(fn [{:__aliases__, _meta, alias_info}] -> alias_info end)
+
+    filtered =
+      mods
+      |> Enum.filter(fn module_info -> !Enum.member?(bare_aliases, module_info) end)
+      |> Enum.map(fn module_info ->
+           matching_alias =
+             Enum.find(bare_aliases, fn alias_info ->
+               List.last(alias_info) == hd(module_info)
+             end)
+
+           if is_nil(matching_alias) do
+             module_info
+           else
+             Enum.drop(matching_alias, -1) ++ module_info
+           end
+         end)
+
+    filtered
+  end
+
+  defp remove_as_aliases(mods, aliases) do
+    as_aliases =
+      aliases
+      |> Enum.filter(fn
+           [{:__aliases__, _, _}, [as: {:__aliases__, _, _}]] -> true
+           _ -> false
+         end)
+      |> Enum.map(fn [{_, _, full_info}, [as: {_, _, alias_info}]] -> {full_info, alias_info} end)
+
+    filtered =
+      mods
+      |> Enum.reject(fn module_info ->
+           Enum.any?(as_aliases, fn {full_name, _alias_name} ->
+             module_info == full_name
+           end)
+         end)
+      |> Enum.map(fn module_info ->
+           matching_alias =
+             Enum.find(as_aliases, fn {_, alias_name} ->
+               alias_name == module_info
+             end)
+
+           if is_nil(matching_alias) do
+             module_info
+           else
+             {new_name, _} = matching_alias
+             new_name
+           end
+         end)
+
+    filtered
+  end
+
+  defp remove_multi_aliases(mods, aliases) do
+    multi_aliases =
+      aliases
+      |> Enum.filter(fn
+        [{{:., _, [{:__aliases__, _, _}, :{}]}, _, _}] -> true
+           _ -> false
+         end)
+      |> Enum.flat_map(fn [{{:., _, [{_, _, outside}, _]}, _,  aliases}] ->
+        Enum.map(aliases, fn {:__aliases__, _, suffix} -> outside ++ suffix end)
+      end)
+
+    filtered =
+      mods
+      |> Enum.reject(fn module_info ->
+          Enum.any?(multi_aliases, fn alias_info ->
+            module_info == Enum.drop(alias_info, -1)
+          end)
+      end)
+      |> Enum.map(fn module_info ->
+        matching_alias =
+          Enum.find(multi_aliases, fn alias_info ->
+            [List.last(alias_info)] == module_info
+          end)
+        if is_nil(matching_alias) do
+          module_info
+        else
+          matching_alias
+        end
+      end)
+
+    filtered
+  end
+
+  defp format_module(module_info) do
+    Enum.join(module_info, ".")
   end
 
   @doc """
