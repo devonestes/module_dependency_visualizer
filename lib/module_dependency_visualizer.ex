@@ -82,6 +82,10 @@ defmodule ModuleDependencyVisualizer do
         ast = {:alias, _meta, info}, aliases ->
           {ast, aliases ++ [info]}
 
+        ast = {:require, _, alias_info = [{:__aliases__, _, _}, [as: {:__aliases__, _, _}]]},
+        aliases ->
+          {ast, aliases ++ [alias_info]}
+
         ast, aliases ->
           {ast, aliases}
       end)
@@ -177,31 +181,32 @@ defmodule ModuleDependencyVisualizer do
     multi_aliases =
       aliases
       |> Enum.filter(fn
-        [{{:., _, [{:__aliases__, _, _}, :{}]}, _, _}] -> true
+           [{{:., _, [{:__aliases__, _, _}, :{}]}, _, _}] -> true
            _ -> false
          end)
-      |> Enum.flat_map(fn [{{:., _, [{_, _, outside}, _]}, _,  aliases}] ->
-        Enum.map(aliases, fn {:__aliases__, _, suffix} -> outside ++ suffix end)
-      end)
+      |> Enum.flat_map(fn [{{:., _, [{_, _, outside}, _]}, _, aliases}] ->
+           Enum.map(aliases, fn {:__aliases__, _, suffix} -> outside ++ suffix end)
+         end)
 
     filtered =
       mods
       |> Enum.reject(fn module_info ->
-          Enum.any?(multi_aliases, fn alias_info ->
-            module_info == Enum.drop(alias_info, -1)
-          end)
-      end)
+           Enum.any?(multi_aliases, fn alias_info ->
+             module_info == Enum.drop(alias_info, -1)
+           end)
+         end)
       |> Enum.map(fn module_info ->
-        matching_alias =
-          Enum.find(multi_aliases, fn alias_info ->
-            [List.last(alias_info)] == module_info
-          end)
-        if is_nil(matching_alias) do
-          module_info
-        else
-          matching_alias
-        end
-      end)
+           matching_alias =
+             Enum.find(multi_aliases, fn alias_info ->
+               [List.last(alias_info)] == module_info
+             end)
+
+           if is_nil(matching_alias) do
+             module_info
+           else
+             matching_alias
+           end
+         end)
 
     filtered
   end

@@ -89,7 +89,6 @@ defmodule ModuleDependencyVisualizerTest do
                ])
     end
 
-    @tag :skip
     test "analyzing a file with use/import/require produces the right dependencies" do
       file = """
       defmodule Tester.One do
@@ -118,10 +117,10 @@ defmodule ModuleDependencyVisualizerTest do
         alias Tester.{One, Three}
         import Tester.Five
         use Tester.Macro
-        require Tester.Logger
+        require Tester.Logger, as: Logger
 
         def first(input) do
-          input |> One.third |> Logger.log
+          input |> One.third |> Tester.Logger.log
           Three.first(input)
         end
       end
