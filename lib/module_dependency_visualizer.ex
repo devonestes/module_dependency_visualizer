@@ -13,8 +13,6 @@ defmodule ModuleDependencyVisualizer do
   def run(file_paths) do
     file_paths
     |> analyze
-    |> calculate_clustering_coefficient
-    |> calculate_shortest_path_length
     |> create_gv_file
     |> create_and_open_graph
 
@@ -232,28 +230,5 @@ defmodule ModuleDependencyVisualizer do
     File.write(gv_file_path, gv_file)
     System.cmd("dot", ["-Tpng", gv_file_path, "-o", graph_path])
     System.cmd("open", [graph_path])
-  end
-
-  def calculate_clustering_coefficient(dependency_list) do
-    # Clustering coefficient for the graph is average of clustering coefficients
-    # for all nodes in the graph
-    coefficient = 0.2
-    IO.puts("0 is a Star, 1 is a Clique")
-    IO.puts("CLUSTERING COEFFICIENT = #{coefficient}")
-    dependency_list
-  end
-
-  def coefficient_for_node(_node, _graph) do
-    # degree = how many neighbors the node has
-    # links = number of links between neighbors
-    # coefficient = (2 * links) / (links * (links - 1))
-    coefficient = 0.2
-    coefficient
-  end
-
-  def calculate_shortest_path_length(dependency_list) do
-    # Shortest path length is the average of the shortest path between all node
-    # pairs in the graph
-    dependency_list
   end
 end
